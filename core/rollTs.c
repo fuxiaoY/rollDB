@@ -2,15 +2,53 @@
 #include <string.h> 
 
 #define VALID_MAGIC 0xA5A5A5A5 // 定义一个有效的魔数，用于验证系统分区的有效性
+
+static bool check_addr_in_sector(uint32_t addr, uint32_t sector_start_addr) 
+{
+    return (addr >= sector_start_addr && addr < (sector_start_addr + SINGLE_SECTOR_SIZE)); // 检查地址是否在扇区范围内
+}
+
+
 // 初始化日志数据库
 bool rollts_init(rollts_sys_t *sys_handle) 
 {
     if (!sys_handle) return false; // 如果句柄为空，直接返回
-    //读取系统分区句柄
-    if(false == rolldb_flash_ops.read_data(SYSINFO_START_ADDR, sys_handle, sizeof(rollts_sys_t))) // 从 Flash 中读取系统分区数据到 sys_handle 结构体中
+
+    memset(sys_handle, 0, sizeof(rollts_sys_t)); 
+    for(uint8_t i= 0; i < SYSINFO_NUM; i++)
     {
-        return false;
+        if(false == rolldb_flash_ops.read_data(SYSINFO_START_ADDR + i * SINGLE_SECTOR_SIZE, sys_handle, sizeof(rollts_sys_t))) // 从 Flash 中读取系统分区数据到 sys_handle 结构体中
+        {
+            return false;
+        }
+
+        if ((sys_handle->magic_valid != VALID_MAGIC) ||(sys_handle->sys_size != SYSINFO_SIZE )||(sys_handle->log_size != LOG_SECTOR_SIZE))
+        {
+            continue; // 如果系统分区无效，继续读取下一个扇区
+        }
+        else
+        {            
+            //该扇区有效,就循环读取，直到出现无效的系统分区
+            rollts_sys_t sys_handle_temp;
+            memcpy(&sys_handle_temp, sys_handle, sizeof(rollts_sys_t)); // 复制当前系统分区数据到临时变量
+            do
+            {
+                // 如果地址超过本扇区范围，则跳出循环
+                if(false == check_addr_in_sector(sys_handle_temp.addr_offset,SYSINFO_START_ADDR + i * SINGLE_SECTOR_SIZE))
+                {
+                    break;
+                }
+                if(false == rolldb_flash_ops.read_data(sys_handle_temp.addr_offset, sys_handle, sizeof(rollts_sys_t)))
+                {
+                    return false;
+                }
+            }while(sys_handle->magic_valid == VALID_MAGIC);
+            // 找到最新分区
+            memcpy(sys_handle, &sys_handle_temp, sizeof(rollts_sys_t)); // 复制当前系统分区数据到临时变量
+            break;
+        }
     }
+
     // 检查系统分区是否有效
     if ((sys_handle->magic_valid != VALID_MAGIC) ||(sys_handle->sys_size != SYSINFO_SIZE )||(sys_handle->log_size != LOG_SECTOR_SIZE))
     { 
@@ -22,6 +60,8 @@ bool rollts_init(rollts_sys_t *sys_handle)
         sys_handle->log_data_end = LOG_SECTOR_START_ADDR; // 初始化日志结束地址
         sys_handle->sys_size = SYSINFO_SIZE;    // 设置系统分区大小
         sys_handle->log_size = LOG_SECTOR_SIZE; // 设置日志分区大小
+        sys_handle->addr_current_sector = SYSINFO_START_ADDR; // 当前系统分区地址偏移
+        sys_handle->addr_offset = sizeof(rollts_sys_t);
         sys_handle->log_num = 0; // 初始化日志数量为 0
         sys_handle->current_sector = 0; // 初始化当前写入扇区为第一个扇区
 
@@ -87,6 +127,8 @@ bool rollts_clear(rollts_sys_t *sys_handle)
     sys_handle->sys_info_len = sizeof(rollts_sys_t); // 设置系统分区数据长度
     sys_handle->log_data_start = LOG_SECTOR_START_ADDR; // 初始化日志起始地址
     sys_handle->log_data_end = LOG_SECTOR_START_ADDR; // 初始化日志结束地址
+    sys_handle->addr_current_sector = SYSINFO_START_ADDR; // 当前系统分区地址偏移
+    sys_handle->addr_offset = sizeof(rollts_sys_t);
     sys_handle->log_num = 0; // 初始化日志数量为 0
     sys_handle->current_sector = 0; // 初始化当前写入扇区为第一个扇区
 
@@ -235,16 +277,35 @@ static bool rollts_write_log_data(rollts_sys_t *sys_handle, uint8_t *data, uint1
 // 参数 sys_handle 是一个指向 rollts_sys_t 类型的指针，表示系统信息的句柄
 static bool rollts_update_sysinfo(rollts_sys_t *sys_handle) 
 {
-    // 调用 rolldb_flash_ops 结构体中的 erase_sector 函数，擦除系统信息所在的 Flash 分区
-    // SYSINFO_START_ADDR 是系统信息分区的起始地址
-    // 如果擦除操作失败（返回值小于 0），则返回 false
-    if(false == rolldb_flash_ops.erase_sector(SYSINFO_START_ADDR)) // 擦除系统分区
+
+    uint32_t addr_end_offset = sys_handle->addr_offset + sizeof(rollts_sys_t); // 计算当前系统分区地址偏移
+    if(check_addr_in_sector(addr_end_offset, sys_handle->addr_current_sector))
     {
-        return false; // 擦除失败
+        //偏移后地址在扇区内 可以直接写入
+        if(false == rolldb_flash_ops.write_data(SYSINFO_START_ADDR, sys_handle, sizeof(rollts_sys_t))) // 将系统分区数据写入 Flash
+        {
+            return false; // 写入失败
+        }
     }
-    if(false == rolldb_flash_ops.write_data(SYSINFO_START_ADDR, sys_handle, sizeof(rollts_sys_t))) // 将系统分区数据写入 Flash
+    else
     {
-        return false; // 写入失败
+        //下一个扇区
+        // 擦除当前系统分区所在的 Flash 扇区
+        if(false == rolldb_flash_ops.erase_sector(sys_handle->addr_current_sector)) 
+        {
+            return false; // 擦除失败
+        }
+        sys_handle->addr_current_sector += SINGLE_SECTOR_SIZE;    //更新
+        if(sys_handle->addr_current_sector >= SYSINFO_START_ADDR + SYSINFO_NUM * SINGLE_SECTOR_SIZE)
+        {
+            sys_handle->addr_current_sector = SYSINFO_START_ADDR; // 如果当前系统分区地址超过最大值，则重置为起始地址
+        }
+        sys_handle->addr_offset = sys_handle->addr_current_sector + sizeof(rollts_sys_t);  // 下一个系统分区地址偏移
+        // 将系统分区数据写入下一个 Flash
+        if(false == rolldb_flash_ops.write_data(sys_handle->addr_current_sector, sys_handle, sizeof(rollts_sys_t))) 
+        {
+            return false; // 写入失败
+        }
     }
     return true; // 写入成功
 }

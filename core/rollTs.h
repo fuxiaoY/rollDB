@@ -62,7 +62,7 @@ extern "C" {
 // 硬件扇区大小
 #define SINGLE_SECTOR_SIZE      (4*1024) //4KB
 // 日志数据库总大小
-#define ROLLTS_MAX_SIZE         (5 * SINGLE_SECTOR_SIZE) // 总日志大小包括系统分区+日志分区
+#define ROLLTS_MAX_SIZE         (6 * SINGLE_SECTOR_SIZE) // 总日志大小包括系统分区+日志分区
 // 日志分区大小
 #define LOG_SECTOR_SIZE         (4 * SINGLE_SECTOR_SIZE) // 日志分区大小-用于存储数据
 // 系统分区大小
@@ -114,7 +114,8 @@ typedef struct
  {
     uint32_t magic_valid;     // 系统分区有效标志
     uint32_t sys_info_len;    // 系统分区数据长度
-    uint32_t addr_offset;     // 下一个系统分区地址偏移(预留)
+    uint32_t addr_current_sector;    // 当前系统分区扇区起始地址
+    uint32_t addr_offset;     // 下一个系统分区地址偏移
     uint32_t sys_size;        // 系统分区大小
     uint32_t log_size;        // 日志分区大小
 

@@ -187,7 +187,7 @@ printf("Remaining capacity size: %u bytes\n", capacity_size);
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request 来改进 `rollDB`。有关贡献指南，请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+欢迎提交 Issue 和 Pull Request 来改进 `rollDB`。
 
 ---
 

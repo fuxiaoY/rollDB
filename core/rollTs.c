@@ -31,20 +31,27 @@ bool rollts_init(rollts_sys_t *sys_handle)
             //该扇区有效,就循环读取，直到出现无效的系统分区
             rollts_sys_t sys_handle_temp;
             memcpy(&sys_handle_temp, sys_handle, sizeof(rollts_sys_t)); // 复制当前系统分区数据到临时变量
+            uint32_t count = 0;
             do
             {
+                memcpy(sys_handle, &sys_handle_temp, sizeof(rollts_sys_t)); 
                 // 如果地址超过本扇区范围，则跳出循环
+                // 操作备份区域
                 if(false == check_addr_in_sector(sys_handle_temp.addr_offset,SYSINFO_START_ADDR + i * SINGLE_SECTOR_SIZE))
                 {
                     break;
                 }
-                if(false == rolldb_flash_ops.read_data(sys_handle_temp.addr_offset, sys_handle, sizeof(rollts_sys_t)))
+                if(false == rolldb_flash_ops.read_data(sys_handle_temp.addr_offset, &sys_handle_temp, sizeof(rollts_sys_t)))
                 {
                     return false;
                 }
-            }while(sys_handle->magic_valid == VALID_MAGIC);
-            // 找到最新分区
-            memcpy(sys_handle, &sys_handle_temp, sizeof(rollts_sys_t)); // 复制当前系统分区数据到临时变量
+                count++;
+                if(count > 100)
+                {
+                    sys_handle_temp.magic_valid = 0x00;
+                    break;
+                }
+            }while(sys_handle_temp.magic_valid == VALID_MAGIC);
             break;
         }
     }
@@ -61,7 +68,7 @@ bool rollts_init(rollts_sys_t *sys_handle)
         sys_handle->sys_size = SYSINFO_SIZE;    // 设置系统分区大小
         sys_handle->log_size = LOG_SECTOR_SIZE; // 设置日志分区大小
         sys_handle->addr_current_sector = SYSINFO_START_ADDR; // 当前系统分区地址偏移
-        sys_handle->addr_offset = sizeof(rollts_sys_t);
+        sys_handle->addr_offset = SYSINFO_START_ADDR + sizeof(rollts_sys_t);
         sys_handle->log_num = 0; // 初始化日志数量为 0
         sys_handle->current_sector = 0; // 初始化当前写入扇区为第一个扇区
 
@@ -97,6 +104,7 @@ bool rollts_init(rollts_sys_t *sys_handle)
             return false;
         }
     }
+    log_info("sys_handle->addr_current_sector:0x%x, sys_handle->addr_offset:0x%x", sys_handle->addr_current_sector, sys_handle->addr_offset); 
     log_info("sys_handle->log_data_start:0x%x, sys_handle->log_data_end:0x%x", sys_handle->log_data_start, sys_handle->log_data_end); 
     log_info("sys_handle->log_num:%d", sys_handle->log_num); // 输出日志数量
     log_info("rollts_init succeed!"); // 输出系统分区有效标志
@@ -128,7 +136,7 @@ bool rollts_clear(rollts_sys_t *sys_handle)
     sys_handle->log_data_start = LOG_SECTOR_START_ADDR; // 初始化日志起始地址
     sys_handle->log_data_end = LOG_SECTOR_START_ADDR; // 初始化日志结束地址
     sys_handle->addr_current_sector = SYSINFO_START_ADDR; // 当前系统分区地址偏移
-    sys_handle->addr_offset = sizeof(rollts_sys_t);
+    sys_handle->addr_offset = SYSINFO_START_ADDR + sizeof(rollts_sys_t);
     sys_handle->log_num = 0; // 初始化日志数量为 0
     sys_handle->current_sector = 0; // 初始化当前写入扇区为第一个扇区
 
@@ -281,8 +289,10 @@ static bool rollts_update_sysinfo(rollts_sys_t *sys_handle)
     uint32_t addr_end_offset = sys_handle->addr_offset + sizeof(rollts_sys_t); // 计算当前系统分区地址偏移
     if(check_addr_in_sector(addr_end_offset, sys_handle->addr_current_sector))
     {
+        uint32_t addr_offset = sys_handle->addr_offset;
+        sys_handle->addr_offset += sizeof(rollts_sys_t); // 更新下一个系统分区地址偏移
         //偏移后地址在扇区内 可以直接写入
-        if(false == rolldb_flash_ops.write_data(SYSINFO_START_ADDR, sys_handle, sizeof(rollts_sys_t))) // 将系统分区数据写入 Flash
+        if(false == rolldb_flash_ops.write_data(addr_offset, sys_handle, sizeof(rollts_sys_t))) // 将系统分区数据写入 Flash
         {
             return false; // 写入失败
         }

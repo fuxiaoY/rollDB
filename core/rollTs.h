@@ -114,8 +114,8 @@ typedef struct
  {
     uint32_t magic_valid;     // 系统分区有效标志
     uint32_t sys_info_len;    // 系统分区数据长度
-    uint32_t addr_current_sector;    // 当前系统分区扇区起始地址
-    uint32_t addr_offset;     // 下一个系统分区地址偏移
+    uint32_t sys_addr_current_sector;    // 当前系统分区扇区起始地址
+    uint32_t sys_addr_offset;     // 下一个系统分区地址偏移
     uint32_t sys_size;        // 系统分区大小
     uint32_t log_size;        // 日志分区大小
 
@@ -123,8 +123,7 @@ typedef struct
     uint32_t log_data_end;    // 日志分区尾条结束地址
     int32_t log_num;          // 日志数量
     uint32_t log_action_num;  // 日志操作数量
-
-    uint32_t current_sector;  // 当前写入的扇区 从0开始编号
+    uint32_t log_current_sector;  // 当前写入的扇区 从0开始编号
     sector_status_t log_sector_status[LOG_SECTOR_SIZE/SINGLE_SECTOR_SIZE]; // 日志分区扇区状态
 } rollts_sys_t;
 
@@ -208,6 +207,11 @@ uint32_t rollts_capacity(rollts_sys_t *sys_handle) ;
  */
 uint32_t rollts_capacity_size(rollts_sys_t *sys_handle) ;
 
+/**
+ * @brief 日志修复
+ * @return 成功返回true，失败返回false
+ */
+bool rollts_repair_logs(rollts_sys_t *sys_handle,rollts_log_t *log_handle);
 #ifdef __cplusplus
 }
 #endif

@@ -381,7 +381,7 @@ static int rollts_mem_tab_init(rollts_manager_t *rollts_manager)
     }
     else
     {
-        log_error(" scan_head_block_addr not found!");
+        log_alt(" scan_head_block_addr not found!");
         if(0 == head_block_force_format(rollts_manager))
         {
             return 0;
@@ -415,8 +415,8 @@ static void data_block_loop(rollts_manager_t *rollts_manager)
                 ||(-1  == current_block_info.data_num))
         {
             // 完整性检查不通过，需要进行日志修复
-            log_error("rollts_data_block_loop: block_info integrity check failed");
-            log_error("repair...");
+            log_alt("rollts_data_block_loop: block_info integrity check failed");
+            log_alt("repair...");
             is_block_info_valid = false;
         }
         else
@@ -635,7 +635,7 @@ static bool find_the_last_position_and_calc(rollts_manager_t *rollts_manager,
         }
         else
         {
-            log_error("last_data_addr is not 0xFFFFFFFF,you need to check it");
+            log_alt("last_data_addr is not 0xFFFFFFFF,you need to check it");
         }
         if(-1 == data_num)  
         {
@@ -645,15 +645,16 @@ static bool find_the_last_position_and_calc(rollts_manager_t *rollts_manager,
         }  
         else
         {
-            log_error("data_num is not -1,you need to check it");
+            log_alt("data_num is not -1,you need to check it");
         }
-        { // test
-            block_info_t pre_block_info;
-            memset(&pre_block_info , 0xFF, sizeof(block_info_t));
-            rollts_manager->flash_ops.read_data(rollts_manager->mem_tab.pre_addr,  &pre_block_info, sizeof(block_info_t));
-            log_debug("writting pre_block_info:last_data_addr :0x%x",pre_block_info.last_data_addr);
-            log_debug("writting pre_block_info:data_num       :0x%x",pre_block_info.data_num);
-        }
+        // test
+        // { 
+        //     block_info_t pre_block_info;
+        //     memset(&pre_block_info , 0xFF, sizeof(block_info_t));
+        //     rollts_manager->flash_ops.read_data(rollts_manager->mem_tab.pre_addr,  &pre_block_info, sizeof(block_info_t));
+        //     log_debug("writting pre_block_info:last_data_addr :0x%x",pre_block_info.last_data_addr);
+        //     log_debug("writting pre_block_info:data_num       :0x%x",pre_block_info.data_num);
+        // }
         return false;
     }
 }
@@ -673,7 +674,7 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     // 检查数据长度是否超过单个块数据上限大小 冗余4字节
     if(data_frame_len >= rollts_manager->sys_info.single_block_size - sizeof(block_info_t) - 4)
     {
-        log_error(" rollts_add: (data_frame_len :%d, you need to split data less than %d",
+        log_alt(" rollts_add: (data_frame_len :%d, you need to split data less than %d",
                     data_frame_len,rollts_manager->sys_info.single_block_size - sizeof(block_info_t) - 4);
         return false;
     }
@@ -700,12 +701,12 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     // 2.写入数据
     rollts_manager->flash_ops.write_data(rollts_manager->rollts_data.cur_addr + sizeof(rollts_data_t),data,payload_len);
     // test
-    {
-        uint8_t data_test[110] = {0};
-        memset(data_test,0x00,sizeof(data));
-        rollts_manager->flash_ops.read_data(rollts_manager->rollts_data.cur_addr + sizeof(rollts_data_t), 
-                                            &data_test, 100);
-    }
+    // {
+    //     uint8_t data_test[110] = {0};
+    //     memset(data_test,0x00,sizeof(data));
+    //     rollts_manager->flash_ops.read_data(rollts_manager->rollts_data.cur_addr + sizeof(rollts_data_t), 
+    //                                         &data_test, 100);
+    // }
     // 3.更新数据信息
     rollts_manager->rollts_data.pre_addr = rollts_manager->rollts_data.cur_addr;
     rollts_manager->rollts_data.cur_addr = rollts_manager->rollts_data.next_addr;
@@ -713,58 +714,6 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     return true;
 }
 
-
-/**
- * @func: 从最后一条开始 获取数据
- * 
- */
-bool rollts_get_all_reverse(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t max_payload_len)
-{
-    if(MAGIC_VALID != rollts_manager->is_init)
-    {
-        return false;
-    }
-    uint32_t pre_block_addr = rollts_manager->mem_tab.pre_addr;
- 
-    rollts_data_t rollts_data_info;
-    rollts_data_info.cur_addr = rollts_manager->rollts_data.pre_addr;
-    int i = 0;
-    while(i < rollts_manager->sys_info.rollts_max_block_num - 1)
-    {
-        i++;
-        while((0 != rollts_data_info.cur_addr) &&(0xFFFFFFFF != rollts_data_info.cur_addr))
-        {
-            rollts_manager->flash_ops.read_data(rollts_data_info.cur_addr, &rollts_data_info, sizeof(rollts_data_t));
-
-            uint32_t copy_len = (rollts_data_info.payload_len <= max_payload_len) ? rollts_data_info.payload_len : max_payload_len;
-            rollts_manager->flash_ops.read_data(rollts_data_info.cur_addr + sizeof(rollts_data_t), 
-                                                data, copy_len);
-                // test                            
-                data[copy_len] = '\0';
-                log_info("%s", (char*)data);
-
-            rollts_data_info.cur_addr = rollts_data_info.pre_addr;
-        }
-        // 数据区已达到block头部
-        // 上一个数据区
-        pre_block_addr = get_pre_block(rollts_manager,pre_block_addr);
-
-        if(pre_block_addr != rollts_manager->mem_tab.head_backup_addr)
-        {
-            //获取当前block的last_addr
-            block_info_t block_info;
-            rollts_manager->flash_ops.read_data(pre_block_addr, 
-                                                    &block_info, sizeof(block_info_t));
-            rollts_data_info.cur_addr = block_info.last_data_addr;
-        }
-        else
-        {
-            // 数据区已到达循环缓冲区末尾 遍历已完成
-            break;
-        }
-    }
-    return true;
-}
 
 /**
  * @func: 获取总日志条数
@@ -805,7 +754,7 @@ int32_t rollts_get_total_record_number(rollts_manager_t *rollts_manager)
 /**
  * @func:整体读取所有日志
  */
-bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t max_payload_len)
+bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t max_payload_len,rollTscb cb)
 {
     if (MAGIC_VALID != rollts_manager->is_init) 
     {
@@ -835,10 +784,10 @@ bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t ma
 
             rollts_manager->flash_ops.read_data(data_addr + sizeof(rollts_data_t),
                                                 data, copy_len);
-
+            cb(data,copy_len);
             // test
-            data[copy_len] = '\0';
-            log_info("%s", (char*)data);
+            // data[copy_len - 1] = '\0';
+            // log_info("%s", (char*)data);
 
             data_addr = tmp.next_addr;
         }
@@ -857,7 +806,8 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
                       uint32_t start_num, 
                       uint32_t end_num,
                       uint8_t *data, 
-                      uint32_t max_payload_len)
+                      uint32_t max_payload_len,
+                      rollTscb cb)
 {
     if (MAGIC_VALID != rollts_manager->is_init || start_num == 0 || start_num > end_num) 
     {
@@ -889,10 +839,12 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
             {
                 uint32_t copy_len = (tmp.payload_len <= max_payload_len) ? tmp.payload_len : max_payload_len;
                 rollts_manager->flash_ops.read_data(data_addr + sizeof(rollts_data_t), data, copy_len);
-                data[copy_len] = '\0';
+
                 found_any = true;
+                cb(data,copy_len);
                 // test
-                log_info("[PICK %lu] %s", current_number, (char*)data);
+                // data[copy_len - 1] = '\0';
+                // log_info("[PICK %lu] %s", current_number, (char*)data);
             }
 
             /* 如果已经超过所需范围，可以提前结束整个遍历(优化) */
@@ -925,20 +877,27 @@ uint8_t rollts_capacity(rollts_manager_t *rollts_manager)
     {
         if (block_addr == rollts_manager->mem_tab.pre_addr) 
         {
-            if (rollts_manager->cur_block_data_num > 0) used_sectors++;
+            if (rollts_manager->cur_block_data_num > 0) 
+            {
+                used_sectors++;
+            }
+
         } 
         else 
         {
             int32_t num = 0;
             rollts_manager->flash_ops.read_data(block_addr + offsetof(block_info_t, data_num),
                                                 &num, sizeof(num));
-            if (num > 0) used_sectors++;
+            if (num > 0) 
+            {
+                used_sectors++;
+            }
         }
         block_addr = get_next_block(rollts_manager, block_addr);
     }
 
     uint32_t total = rollts_manager->sys_info.rollts_max_block_num - 3;
-    percent = total ? (used_sectors * 100 + total / 2) / total : 0;  // 四舍五入
+    percent = total ? (used_sectors * 100 + total / 2) / total : 0;  // 四舍五入算法
 
     return (100- percent);
 }

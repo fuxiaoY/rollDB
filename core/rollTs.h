@@ -1,3 +1,41 @@
+/**
+  ******************************************************************************
+  * @file           : rollTs.c
+  * @brief          : 时序数据库实现
+  * 
+  * RollDB是一个专为嵌入式系统设计的轻量级数据库，具有以下特点：
+  * - 自动回滚机制：当存储空间不足时自动清理旧日志
+  * - 高效的Flash存储管理：按扇区管理日志，优化写入和擦除操作
+  * - 灵活的日志读取方式：支持批量读取和按范围读取
+  * - 容量监控：提供剩余容量查询功能
+  * 
+  * 数据库存储结构分为两部分：
+  * 1. 系统分区：存储数据库元信息(如日志数量、当前写入扇区等)
+  * 2. 日志分区：存储实际的日志数据，每条日志包含日志头和日志体
+  * 
+  * 回滚机制通过循环使用日志扇区实现，当存储空间不足时会自动擦除最早
+  * 的日志扇区以腾出空间给新日志。
+  *
+  * +-------------------+
+  * |    System Sector  | -> 固定 1 block
+  * +-------------------+
+  * |     Log Sector    |
+  * +-------------------+
+  * 
+  * @version        : 1.0.1
+  * @date           : 2025-12-10
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 ARSTUDIO.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 #ifndef ROLLTS_H
 #define ROLLTS_H
 
@@ -17,7 +55,7 @@ extern "C" {
 
 
 // 数据库总大小 -字节数(需与最小擦除单元对齐)
-#define ROLLTS_MAX_SIZE         (10  * MIN_ERASE_UNIT_SIZE) 
+#define ROLLTS_MAX_SIZE         (8  * MIN_ERASE_UNIT_SIZE) 
 /*---------------------------------------------------------------------------*/
 /*******************
  * 配置项 物理存储单元 
@@ -38,13 +76,6 @@ extern "C" {
 #define ROLLTS_MAX_BLOCK_NUM   (ROLLTS_MAX_SIZE/MIN_ERASE_UNIT_SIZE)
 /* typedef-------------------------------------------------------------------*/
 #define ROLLDB_VERSION         "1.0.1"
-/**
-  * +-------------------+
-  * |    System Sector  | -> 固定 1 block
-  * +-------------------+
-  * |     Log Sector    |
-  * +-------------------+
-  */
 
 /**
  * 系统分区结构体
@@ -71,16 +102,12 @@ typedef struct
  * 位索引:   7   6    5    4    3    2    1    0
  * 内容:   is_head | reserved[3:0] | status[2:0]
  */
-#define SET_EMPTY(status)         status.block_status = 7  // 111
-#define SET_WRITTING(status)      status.block_status = 6  // 110
-#define SET_FULL(status)          status.block_status = 4  // 100
+
 #define SET_HEAD(status)          status.is_head      = 0  // 00
 #define SET_BACKUP(status)        status.is_head      = 1  // 01
 #define SET_NOT_HEAD(status)      status.is_head      = 3  // 11
 
-#define IS_EMPTY(status)        (status.block_status == 7) // 111
-#define IS_WRITTING(status)     (status.block_status == 6) // 110
-#define IS_FULL(status)         (status.block_status == 4) // 100
+
 #define IS_HEAD(status)         (status.is_head      == 0) // 00
 #define IS_BACKUP(status)       (status.is_head      == 1) // 01
 #define IS_NOT_HEAD(status)     (status.is_head      == 3) // 11
@@ -95,9 +122,8 @@ typedef struct
     {
         struct
         {
-            uint8_t         block_status :3;             //111: empty, 110: writing, 100: full
-            uint8_t             reserved :3;             // default：111
-            uint8_t              is_head :2;             // 01:backup 00:head 11：not head
+            uint8_t         block_status :6;             // default：111
+            uint8_t              is_head :2;             // backup:01 head:00 not head:11
         };
         uint8_t                status;
     };
@@ -186,27 +212,25 @@ extern bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t
 extern void data_block_loop(rollts_manager_t *rollts_manager);
 
 /**
- * @func: 日志整体读取-反向获取数据
- * 
- */
-extern bool rollts_get_all_reverse(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t max_payload_len);
-
-/**
  * @brief 日志整体读取
  * 
  */
-extern bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t max_payload_len);
+extern bool rollts_get_all(rollts_manager_t *rollts_manager, 
+                           uint8_t *data, uint32_t max_payload_len,rollTscb cb);
+
 /**
  * @brief 日志条数读取
  */
 extern int32_t rollts_get_total_record_number(rollts_manager_t *rollts_manager);
+
 /**
  * @brief 日志选择读取
  * 
  */
 extern bool rollts_read_pick(rollts_manager_t *rollts_manager,
-                      uint32_t start_num, uint32_t end_num,
-                      uint8_t *data, uint32_t max_payload_len);
+                             uint32_t start_num, uint32_t end_num,
+                             uint8_t *data, uint32_t max_payload_len,rollTscb cb);
+
 /**
  * @brief 日志剩余容量 百分比
  */

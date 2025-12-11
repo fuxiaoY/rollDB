@@ -51,11 +51,9 @@ extern "C" {
 /********************
  * 配置项 数据库 
  *******************/
-// #define ROLLDB_INFORMATION       
-
 
 // 数据库总大小 -字节数(需与最小擦除单元对齐)
-#define ROLLTS_MAX_SIZE         (8  * MIN_ERASE_UNIT_SIZE) 
+#define ROLLTS_MAX_SIZE         (100  * MIN_ERASE_UNIT_SIZE) 
 /*---------------------------------------------------------------------------*/
 /*******************
  * 配置项 物理存储单元 
@@ -100,7 +98,7 @@ typedef struct
  * 块区信息头
  * 
  * 位索引:   7   6    5    4    3    2    1    0
- * 内容:   is_head | reserved[3:0] | status[2:0]
+ * 内容:   is_head | reserved[5:0]
  */
 
 #define SET_HEAD(status)          status.is_head      = 0  // 00
@@ -149,6 +147,10 @@ typedef struct
     int                            (*erase_sector)(uint32_t address);
     int (*write_data)(uint32_t address, void *data, uint32_t length);
     int  (*read_data)(uint32_t address, void *data, uint32_t length);
+#ifdef RTOS_MUTEX_ENABLE
+    void                                         (*mutex_lock)(void);
+    void                                       (*mutex_unlock)(void);
+#endif
 } flash_ops_t;
 
 typedef struct 
@@ -205,11 +207,6 @@ extern bool rollts_clear(rollts_manager_t *rollts_manager);
  * @func: 数据库添加数据
  */
 extern bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payload_len);
-
-/**
- * @func: 查找当前block最后一个日志位置
- */
-extern void data_block_loop(rollts_manager_t *rollts_manager);
 
 /**
  * @brief 日志整体读取

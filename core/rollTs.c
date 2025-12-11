@@ -668,7 +668,9 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     {
         return false;
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     // 数据帧总长计算
     uint32_t data_frame_len = sizeof(rollts_data_t) + payload_len;
     // 检查数据长度是否超过单个块数据上限大小 冗余4字节
@@ -676,6 +678,9 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     {
         log_alt(" rollts_add: (data_frame_len :%d, you need to split data less than %d",
                     data_frame_len,rollts_manager->sys_info.single_block_size - sizeof(block_info_t) - 4);
+#ifdef RTOS_MUTEX_ENABLE
+        rollts_manager->flash_ops.mutex_unlock();
+#endif
         return false;
     }
     // 查找当前最后日志位置
@@ -690,6 +695,9 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
         if(false == find_the_last_position_and_calc(rollts_manager,data_frame_len,payload_len))
         {
             log_error(" rollts_add: something wrong when find_the_last_position_and_calc");
+#ifdef RTOS_MUTEX_ENABLE
+            rollts_manager->flash_ops.mutex_unlock();
+#endif
             return false;
         }
     }
@@ -710,7 +718,9 @@ bool rollts_add(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t payloa
     // 3.更新数据信息
     rollts_manager->rollts_data.pre_addr = rollts_manager->rollts_data.cur_addr;
     rollts_manager->rollts_data.cur_addr = rollts_manager->rollts_data.next_addr;
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return true;
 }
 
@@ -725,7 +735,9 @@ int32_t rollts_get_total_record_number(rollts_manager_t *rollts_manager)
     {
         return -1;
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     int32_t total = 0;
 
     /* 当前写入 block(pre_addr)始终参与计数 */
@@ -746,9 +758,10 @@ int32_t rollts_get_total_record_number(rollts_manager_t *rollts_manager)
         }
         cur_block = get_pre_block(rollts_manager, cur_block);
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return total;
-
 }
 
 /**
@@ -760,7 +773,9 @@ bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t ma
     {
         return false;
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     rollts_data_t tmp;
     /* 最旧 block = head_backup 的下一个 */
     uint32_t current_block_addr = get_oldest_block(rollts_manager);  
@@ -795,7 +810,9 @@ bool rollts_get_all(rollts_manager_t *rollts_manager, uint8_t *data, uint32_t ma
         /* 下一个 block */
         current_block_addr = get_next_block(rollts_manager, current_block_addr);
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return true;
 }
 
@@ -813,7 +830,9 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
     {
         return false;
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     rollts_data_t tmp;
     uint32_t block_addr = get_oldest_block(rollts_manager);
     uint32_t current_number = 0;
@@ -848,7 +867,11 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
             }
 
             /* 如果已经超过所需范围，可以提前结束整个遍历(优化) */
-            if (current_number >= end_num) {
+            if (current_number >= end_num) 
+            {
+#ifdef RTOS_MUTEX_ENABLE
+                rollts_manager->flash_ops.mutex_unlock();
+#endif
                 return true;
             }
 
@@ -858,7 +881,9 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
         /* 跳到下一个 block(顺时针) */
         block_addr = get_next_block(rollts_manager, block_addr);
     }
-
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return found_any;
 }
 
@@ -867,9 +892,15 @@ bool rollts_read_pick(rollts_manager_t *rollts_manager,
  */
 uint8_t rollts_capacity(rollts_manager_t *rollts_manager)
 {
-    uint8_t percent = 0;
-    if (MAGIC_VALID != rollts_manager->is_init) return false;
 
+    if (MAGIC_VALID != rollts_manager->is_init) 
+    {
+        return false;
+    }
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
+    uint8_t percent = 0;
     uint32_t used_sectors = 0;
     uint32_t block_addr = get_oldest_block(rollts_manager);
 
@@ -898,8 +929,10 @@ uint8_t rollts_capacity(rollts_manager_t *rollts_manager)
 
     uint32_t total = rollts_manager->sys_info.rollts_max_block_num - 3;
     percent = total ? (used_sectors * 100 + total / 2) / total : 0;  // 四舍五入算法
-
-    return (100- percent);
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
+    return (100 - percent);
 }
 
 
@@ -913,6 +946,9 @@ uint32_t rollts_capacity_size(rollts_manager_t *rollts_manager)
  */
 int rollts_init(rollts_manager_t *rollts_manager)
 {
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     int ret = -1;
     if(check_if_rollts_size_aligned())
     {
@@ -938,6 +974,9 @@ int rollts_init(rollts_manager_t *rollts_manager)
     memset(&rollts_manager->rollts_data,0,sizeof(rollts_data_t));
     //初始化当前块数据数量
     data_block_loop(rollts_manager);
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return ret;
 }
 
@@ -946,6 +985,9 @@ int rollts_init(rollts_manager_t *rollts_manager)
  */
 bool rollts_clear(rollts_manager_t *rollts_manager)
 {
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_lock();
+#endif
     int ret = -1;
     rollts_manager_print(rollts_manager);
     //重新初始化数据库
@@ -961,5 +1003,8 @@ bool rollts_clear(rollts_manager_t *rollts_manager)
     memset(&rollts_manager->rollts_data,0,sizeof(rollts_data_t));
     //初始化当前块数据数量
     data_block_loop(rollts_manager);
+#ifdef RTOS_MUTEX_ENABLE
+    rollts_manager->flash_ops.mutex_unlock();
+#endif
     return ret;
 }
